@@ -66,6 +66,7 @@ main{min-width:0;padding-block:20px calc(var(--bar-h) + 40px)}
 .jump{position:sticky;top:-16px;z-index:2;background:var(--paper);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:6px 0 10px;margin-top:-6px}
 .jump button{font-size:11.5px;line-height:1.3;padding:6px 2px;border:1px solid var(--line);border-radius:8px;background:var(--surface);text-align:center}
 .jump button:hover{border-color:var(--accent);color:var(--accent)}
+.jump button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .areahead{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:2px solid var(--ink)}
 .areahead h2{font-size:15px;margin:0;flex:1;letter-spacing:.04em}
 .areahead small{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
@@ -257,7 +258,7 @@ ol.qlist{list-style:none;margin:0;padding:0;display:grid;gap:6px;counter-reset:q
 @media (max-width:900px){
   .tocbtn{display:inline-flex}
   .wrap{grid-template-columns:minmax(0,1fr)}
-  aside{position:fixed;z-index:40;top:0;left:0;bottom:0;width:min(380px,88vw);height:auto;background:var(--paper);
+  aside{position:fixed;z-index:40;top:0;left:0;bottom:0;width:min(380px,88vw);height:auto;max-height:100%;align-self:stretch;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--paper);
     padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(var(--bar-h) + 16px);
     transform:translateX(-102%);transition:transform .25s;box-shadow:8px 0 30px rgba(0,0,0,.2)}
   aside.open{transform:none}
@@ -477,14 +478,15 @@ function updateQ(){$('qpos').textContent=scopeName(S.scope)+' '+(qi+1)+'/'+queue
 
 // ---- TOC ----
 function renderTOC(){
-  const toc=$('toc');let h='<nav class="jump" aria-label="分野へ移動">'+AREAS.map(a=>`<button data-jump="${a.id}">${a.name}</button>`).join('')+'</nav>';
+  if(!AREAS.some(a=>a.id===S.tocArea))S.tocArea=areaOf(shownN||S.n);
+  const toc=$('toc');let h='<nav class="jump" aria-label="分野を選ぶ">'+AREAS.map(a=>`<button data-jump="${a.id}" aria-pressed="${a.id===S.tocArea}">${a.name}</button>`).join('')+'</nav>';
   AREAS.forEach(a=>{
     const its=ITEMS.filter(i=>a.laws.includes(i.cat));
     const tot=its.reduce((s,i)=>s+DD(i),0);
-    h+=`<section class="area" id="area-${a.id}"><div class="areahead"><h2>${a.name}</h2><small>${its.length}項目 · ${fmt(tot)}</small><button class="playgroup" data-area="${a.id}" aria-label="${a.name}を連続再生"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>連続再生</button></div>`;
+    h+=`<section class="area" id="area-${a.id}"${a.id===S.tocArea?'':' hidden'}><div class="areahead"><h2>${a.name}</h2><small>${its.length}項目 · ${fmt(tot)}</small><button class="playgroup" data-area="${a.id}" aria-label="${a.name}を連続再生"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>連続再生</button></div>`;
     a.laws.forEach(l=>{
       const li=its.filter(i=>i.cat===l);if(!li.length)return;
-      h+=`<div class="law"><span>${l}（${li[0].n}–${li[li.length-1].n}）</span>${a.laws.length>1?`<button class="playgroup" data-law="${l}" aria-label="${l}を連続再生"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>再生</button>`:''}</div><ol class="items">`;
+      h+=`<div class="law"><span>${l}（${li.length>1?li[0].n+'–'+li[li.length-1].n:li[0].n}）</span>${a.laws.length>1?`<button class="playgroup" data-law="${l}" aria-label="${l}を連続再生"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>再生</button>`:''}</div><ol class="items">`;
       li.forEach(i=>{h+=`<li class="it${has(i.n)?'':' na'}" data-n="${i.n}" tabindex="0"><span class="no">${i.n}</span><span class="tt">${i.title}<span class="gg">${i.goro}</span></span><span class="du">${i.extra?'<span class="st x">直前</span>':`<span class="st" title="出題実績${i.freq}回">${stars(i)}</span>`}<span class="dt">${DD(i)?fmt(DD(i)):'—'}</span></span></li>`});
       h+='</ol>';
     });
@@ -493,7 +495,7 @@ function renderTOC(){
   h+=`<div class="hint" style="padding:0 4px">全体 ${fmt(ITEMS.reduce((s,i)=>s+DD(i),0))}（1.0×のとき）。★は過去10年の出題実績（★★★＝8回以上）。</div>`;
   toc.innerHTML=h;markSavedAll();
   toc.addEventListener('click',e=>{
-    const jb=e.target.closest('[data-jump]');if(jb){document.getElementById('area-'+jb.dataset.jump).scrollIntoView({block:'start',behavior:'smooth'});return}
+    const jb=e.target.closest('[data-jump]');if(jb){setTocArea(jb.dataset.jump,true);return}
     const g=e.target.closest('.playgroup');
     if(g){e.stopPropagation();
       S.scope=g.dataset.area?{type:'area',id:g.dataset.area}:{type:'law',id:g.dataset.law};
@@ -508,13 +510,22 @@ function renderTOC(){
   toc.addEventListener('keydown',e=>{if(e.key==='Enter'){const li=e.target.closest('.it');if(li)li.click()}});
   markTOC();
 }
+function areaOf(n){const it=BY[n];const a=it&&lawArea[it.cat];return a?a.id:AREAS[0].id}
+function setTocArea(id,toCur){
+  S.tocArea=id;save();const toc=$('toc');
+  toc.querySelectorAll('.jump button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.jump===id)));
+  toc.querySelectorAll('section.area').forEach(sec=>{sec.hidden=sec.id!=='area-'+id});
+  toc.scrollTop=0;
+  if(toCur){const cur=toc.querySelector('#area-'+id+' .it.cur');if(cur){const y=cur.offsetTop-toc.clientHeight/3;if(y>0)toc.scrollTop=y}}
+}
 function markTOC(){document.querySelectorAll('.it').forEach(li=>{const n=+li.dataset.n;li.classList.toggle('cur',n===S.n);li.classList.toggle('done',S.done.includes(n));li.classList.toggle('na',!has(n))})}
 function retimeTOC(){document.querySelectorAll('.it').forEach(li=>{const it=BY[+li.dataset.n];const dt=li.querySelector('.dt');if(dt)dt.textContent=DD(it)?fmt(DD(it)):'—'})}
 
 // ---- main content ----
 let shownN=0;
 function show(n){
-  const it=BY[n];shownN=n;if(S.view!=='listen')return;const S0=it.secs.length;const ar=lawArea[it.cat];
+  const it=BY[n];shownN=n;if(innerWidth>900&&S.tocArea&&areaOf(n)!==S.tocArea&&document.querySelector('#toc .jump'))setTocArea(areaOf(n),true);
+  if(S.view!=='listen')return;const S0=it.secs.length;const ar=lawArea[it.cat];
   const k=i=>`data-k="${i}"`;const EX=!!it.extra;const qs=QBY[n]||[];
   let h=`<div class="eyebrow"><span class="num">${it.n}</span><span>${ar?ar.name:''}</span><span>${it.cat}</span>${EX?'':`<span class="stars" title="出題実績${it.freq}回">頻出 ${stars(it)}</span>`}${it.d?`<span>${fmt(it.d)}</span>`:''}</div>
   <h1 class="seg" ${k(0)}>${it.title}</h1>
@@ -715,7 +726,7 @@ function setSleep(v){
 $('sleepSel').onclick=e=>{const b=e.target.closest('button');if(!b)return;setSleep(b.dataset.v)};
 
 // ---- TOC drawer ----
-function openToc(){$('toc').classList.add('open');$('scrim').hidden=false;$('tocBtn').setAttribute('aria-expanded','true');const c=document.querySelector('.it.cur');if(c)c.scrollIntoView({block:'center'})}
+function openToc(){$('toc').classList.add('open');$('scrim').hidden=false;$('tocBtn').setAttribute('aria-expanded','true');setTocArea(areaOf(shownN||S.n),true)}
 function closeToc(){$('toc').classList.remove('open');$('scrim').hidden=true;$('tocBtn').setAttribute('aria-expanded','false')}
 $('tocBtn').onclick=()=>$('toc').classList.contains('open')?closeToc():openToc();$('scrim').onclick=closeToc;
 
